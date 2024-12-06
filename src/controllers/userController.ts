@@ -1,7 +1,7 @@
 import { Request, RequestHandler, Response } from "express";
 import pool from "../config/database";
 import jwt from "jsonwebtoken";
-import { getUserByEmailQuery, loginUserQuery, registerUserQuery } from "../constants/queries";
+import { addNewTrainQuery, getTrainByName, getUserByEmailQuery, loginUserQuery, registerUserQuery } from "../constants/queries";
 
 export const registerUser: RequestHandler = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -12,6 +12,7 @@ export const registerUser: RequestHandler = async (req: Request, res: Response):
 
     if (userExists.rows.length) {
       res.status(409).json({ status: "error", msg: "User already exists!" });
+      return;
     }
 
     // create new user
@@ -44,6 +45,7 @@ export const loginUser: RequestHandler = async (req: Request, res: Response): Pr
     const user = await pool.query(loginUserQuery, [email, password]);
     if (!user.rows.length) {
       res.status(401).json({ status: "error", msg: "Invalid email or password!" });
+      return;
     }
 
     const { id, username } = user.rows[0];
@@ -64,15 +66,28 @@ export const loginUser: RequestHandler = async (req: Request, res: Response): Pr
 
 export const addNewTrain: RequestHandler = async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = req.userId;
-    const { adminAPIKey }: { adminAPIKey: string } = req.body;
-
-    if (adminAPIKey.localeCompare(process.env.ADMIN_API_KEY || "admin-key") != 0) {
-      res.status(403).json({ status: "error", msg: "403 Forbidden (Invalid API key)" })
+    if (!req.body.adminAPIKey) {
+      res.status(403).json({ status: "error", msg: "Admin API key is required!" });
+      return;
     }
 
+    const { adminAPIKey }: { adminAPIKey: string } = req.body;
+    if (adminAPIKey.localeCompare(process.env.ADMIN_API_KEY || "admin-key") != 0) {
+      res.status(403).json({ status: "error", msg: "403 Forbidden (Invalid API key)" });
+      return;
+    }
 
+    const { trainName, source, destination, totalSeats } = req.body;
 
+    const trainExists = await pool.query(getTrainByName, [trainName]);
+    if (trainExists.rows.length) {
+      res.status(409).json({ status: "error", msg: "Train already exists!" });
+      return;
+    }
+
+    await pool.query(addNewTrainQuery, [trainName, source, destination, totalSeats]);
+
+    res.status(201).json({ status: "success", msg: "New Train added successfully!" })
   } catch (e) {
     const error = (e as Error).message;
     res.status(500).json({ status: "error", error });
