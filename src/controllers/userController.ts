@@ -61,3 +61,20 @@ export const loginUser: RequestHandler = async (req: Request, res: Response): Pr
     res.status(500).json({ status: "error", error });
   }
 };
+
+export const addNewTrain: RequestHandler = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.userId;
+    const { adminAPIKey }: { adminAPIKey: string } = req.body;
+
+    if (adminAPIKey.localeCompare(process.env.ADMIN_API_KEY || "admin-key") != 0) {
+      res.status(403).json({ status: "error", msg: "403 Forbidden (Invalid API key)" })
+    }
+
+
+
+  } catch (e) {
+    const error = (e as Error).message;
+    res.status(500).json({ status: "error", error });
+  }
+}
