@@ -1,7 +1,17 @@
 import { Request, RequestHandler, Response } from "express";
 import pool from "../config/database";
 import jwt from "jsonwebtoken";
-import { addNewTrainQuery, bookSeatQuery, getSeatDetailsQuery, getTrainByName, getUserByEmailQuery, loginUserQuery, registerUserQuery, updateBookingTableQuery } from "../constants/queries";
+import {
+  addNewTrainQuery,
+  bookSeatQuery,
+  getSeatAvailabilityQuery,
+  getSeatDetailsQuery,
+  getTrainByName,
+  getUserByEmailQuery,
+  loginUserQuery,
+  registerUserQuery,
+  updateBookingTableQuery
+} from "../constants/queries";
 
 export const registerUser: RequestHandler = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -51,7 +61,7 @@ export const loginUser: RequestHandler = async (req: Request, res: Response): Pr
     const { id, username } = user.rows[0];
     const token = jwt.sign(
       { userId: id },
-      process.env.JWT_SECRET || "87c155f1c28123b638cecddc3d40a62ef7dd2c0d8e13cb3e734231f741c55820",
+      process.env.JWT_SECRET || "random-secret",
       {
         expiresIn: "1h",
       },
@@ -88,6 +98,35 @@ export const addNewTrain: RequestHandler = async (req: Request, res: Response): 
     await pool.query(addNewTrainQuery, [trainName, source, destination, totalSeats]);
 
     res.status(201).json({ status: "success", msg: "New Train added successfully!" })
+  } catch (e) {
+    const error = (e as Error).message;
+    res.status(500).json({ status: "error", error });
+  }
+}
+
+type AvailableTrainType = {
+  train_name: string,
+  seats_available: number
+};
+
+export const getTrainsFromSourceToDest: RequestHandler = async (req: Request, res: Response): Promise<void> => {
+  const { source, destination } = req.body;
+  try {
+    const availableSeats = await pool.query(getSeatAvailabilityQuery, [source, destination]);
+
+    if (!availableSeats.rows.length) {
+      res.status(200).json({ status: "error", msg: `No Seats available from ${source} to ${destination}` });
+      return;
+    }
+
+    let trainsAvailable: AvailableTrainType[] = [];
+    availableSeats.rows.map((seat) => {
+      const { train_name, seats_available } = seat;
+      trainsAvailable.push({ train_name, seats_available });
+    })
+
+    res.status(200).json({ trainsAvailable });
+
   } catch (e) {
     const error = (e as Error).message;
     res.status(500).json({ status: "error", error });

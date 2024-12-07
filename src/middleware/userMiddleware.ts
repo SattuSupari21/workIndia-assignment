@@ -28,7 +28,7 @@ export const verifyToken: RequestHandler = (
     }
     const decodedToken = jwt.verify(
       token!,
-      process.env.JWT_SECRET || "87c155f1c28123b638cecddc3d40a62ef7dd2c0d8e13cb3e734231f741c55820",
+      process.env.JWT_SECRET || "random-secret",
     ) as TokenInterface;
     req.userId = decodedToken.userId;
     next();
