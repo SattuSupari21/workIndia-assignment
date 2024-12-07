@@ -4,14 +4,20 @@ import jwt from "jsonwebtoken";
 import {
   addNewTrainQuery,
   bookSeatQuery,
+  getBookingByIdQuery,
+  getBookingByUserAndTrainQuery,
+  getBookingIdQuery,
   getSeatAvailabilityQuery,
   getSeatDetailsQuery,
-  getTrainByName,
+  getTrainByNameQuery,
+  getUserAndTrainIdQuery,
+  getUserAndTrainNameQuery,
   getUserByEmailQuery,
   loginUserQuery,
   registerUserQuery,
   updateBookingTableQuery
 } from "../constants/queries";
+import { QueryResult } from "pg";
 
 export const registerUser: RequestHandler = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -89,7 +95,7 @@ export const addNewTrain: RequestHandler = async (req: Request, res: Response): 
 
     const { trainName, source, destination, totalSeats } = req.body;
 
-    const trainExists = await pool.query(getTrainByName, [trainName]);
+    const trainExists = await pool.query(getTrainByNameQuery, [trainName]);
     if (trainExists.rows.length) {
       res.status(409).json({ status: "error", msg: "Train already exists!" });
       return;
@@ -163,7 +169,8 @@ export const bookSeat: RequestHandler = async (req: Request, res: Response): Pro
     // transaction finished
     await client.query("COMMIT");
 
-    res.json({ status: "success", message: "Seat booked successfully!" });
+    const bookingId = await pool.query(getBookingIdQuery, [userId, trainId, seatId]);
+    res.json({ status: "success", message: "Seat booked successfully!", bookingId: bookingId.rows[0].id });
   } catch (e) {
     // transaction roll back
     await client.query("ROLLBACK");
@@ -173,3 +180,57 @@ export const bookSeat: RequestHandler = async (req: Request, res: Response): Pro
     client.release();
   }
 };
+
+export const getBookingDetails: RequestHandler = async (req: Request, res: Response): Promise<void> => {
+  try {
+    let { bookingId, username, trainName } = req.body;
+    let bookingExists;
+
+    // find train either by id or by username and train name;
+    if (bookingId) {
+      bookingExists = await pool.query(getBookingByIdQuery, [bookingId]);
+
+      // finding and setting username and trainname using
+      const { userid, trainid } = bookingExists.rows[0];
+      const result = await pool.query(getUserAndTrainNameQuery, [userid, trainid]);
+
+      username = result.rows[0].username;
+      trainName = result.rows[0].trainname;
+
+    } else if (username && trainName) {
+      const result = await pool.query(getUserAndTrainIdQuery, [username, trainName]);
+
+      if (!result.rows.length) {
+        res.status(400).json({ status: "error", msg: "Invalid Username or Train Name!" });
+        return;
+      }
+
+      const { userid, trainid } = result.rows[0];
+      bookingExists = await pool.query(getBookingByUserAndTrainQuery, [userid, trainid]);
+    } else {
+      res.status(400).json({ status: "error", msg: "Booking ID or Username and Train Name is required!" });
+      return;
+    }
+
+    if (!bookingExists) {
+      throw new Error();
+    }
+
+    if (!bookingExists.rows.length) {
+      res.status(404).json({ status: "error", msg: "Sorry, no booking with this ID." });
+      return;
+    }
+
+    // booking exists
+    const { trainid } = bookingExists.rows[0];
+
+    // get list of booked seats
+    const r = await pool.query("SELECT seatNumber FROM Seats WHERE trainid = $1", [trainid]);
+
+    res.status(200).json({ username, trainName, seats: r.rows })
+
+  } catch (e) {
+    const error = (e as Error).message;
+    res.status(500).json({ status: "error", error });
+  }
+}
