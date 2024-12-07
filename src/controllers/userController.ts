@@ -1,7 +1,7 @@
 import { Request, RequestHandler, Response } from "express";
 import pool from "../config/database";
 import jwt from "jsonwebtoken";
-import { addNewTrainQuery, getTrainByName, getUserByEmailQuery, loginUserQuery, registerUserQuery } from "../constants/queries";
+import { addNewTrainQuery, bookSeatQuery, getSeatDetailsQuery, getTrainByName, getUserByEmailQuery, loginUserQuery, registerUserQuery, updateBookingTableQuery } from "../constants/queries";
 
 export const registerUser: RequestHandler = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -93,3 +93,44 @@ export const addNewTrain: RequestHandler = async (req: Request, res: Response): 
     res.status(500).json({ status: "error", error });
   }
 }
+
+export const bookSeat: RequestHandler = async (req: Request, res: Response): Promise<void> => {
+  const { seatNumber, trainId } = req.body;
+  const client = await pool.connect();
+  try {
+    // transaction start
+    await client.query("BEGIN");
+    await client.query("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE");
+
+    // checking seat availability
+    const seatAvailable = await client.query(getSeatDetailsQuery, [trainId, seatNumber]);
+
+    if (!seatAvailable.rows.length) {
+      res.status(404).json({ status: "error", msg: "Seat not found!" });
+      return;
+    }
+
+    if (seatAvailable.rows[0].seatstatus === "booked") {
+      res.status(403).json({ status: "error", msg: "Seat unavailable" });
+      return;
+    }
+
+    const userId = req.userId;
+    const seatId = seatAvailable.rows[0].id;
+
+    await client.query(bookSeatQuery, [seatId]);
+    await client.query(updateBookingTableQuery, [userId, trainId, seatId]);
+
+    // transaction finished
+    await client.query("COMMIT");
+
+    res.json({ status: "success", message: "Seat booked successfully!" });
+  } catch (e) {
+    // transaction roll back
+    await client.query("ROLLBACK");
+    const error = (e as Error).message;
+    res.status(500).json({ status: "error", error });
+  } finally {
+    client.release();
+  }
+};
